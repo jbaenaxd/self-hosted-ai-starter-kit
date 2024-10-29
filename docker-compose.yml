@@ -79,7 +79,6 @@ services:
       - '27017:27017'
     volumes:
       - 'mongo_data:/data/db'
-      - './mongodb/initdb.d/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro'
 
   n8n-import:
     image: 'n8nio/n8n:latest'
