@@ -3,7 +3,7 @@ volumes:
   postgres_storage: null
   ollama_storage: null
   qdrant_storage: null
-  mongo_storage: null  # Volume for MongoDB
+  mongo_data: null
 
 networks:
   demo: null
@@ -23,7 +23,6 @@ x-n8n:
     - N8N_USER_MANAGEMENT_JWT_SECRET
   links:
     - postgres
-    - mongo  # Link to MongoDB
 
 x-ollama:
   image: 'ollama/ollama:latest'
@@ -67,22 +66,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    labels:
-      - coolify.managed=true
-      - coolify.applicationId=2
-      - coolify.type=application
 
   mongo:
     image: 'mongo:latest'
-    container_name: mongo
     networks:
       - demo
     restart: unless-stopped
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+      - MONGO_INITDB_ROOT_USERNAME=mongo_user
+      - MONGO_INITDB_ROOT_PASSWORD=mongo_password
+    ports:
+      - '27017:27017'
     volumes:
-      - 'mongo_storage:/data/db'
+      - 'mongo_data:/data/db'
 
   n8n-import:
     image: 'n8nio/n8n:latest'
@@ -99,7 +95,6 @@ services:
       - N8N_USER_MANAGEMENT_JWT_SECRET
     links:
       - postgres
-      - mongo  # Link to MongoDB
     container_name: n8n-import
     entrypoint: /bin/sh
     command:
@@ -110,10 +105,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    labels:
-      - coolify.managed=true
-      - coolify.applicationId=2
-      - coolify.type=application
 
   n8n:
     image: 'n8nio/n8n:latest'
@@ -130,7 +121,6 @@ services:
       - N8N_USER_MANAGEMENT_JWT_SECRET
     links:
       - postgres
-      - mongo  # Link to MongoDB
     container_name: n8n
     restart: unless-stopped
     ports:
@@ -144,10 +134,6 @@ services:
         condition: service_healthy
       n8n-import:
         condition: service_completed_successfully
-    labels:
-      - coolify.managed=true
-      - coolify.applicationId=2
-      - coolify.type=application
 
   qdrant:
     image: qdrant/qdrant
@@ -159,35 +145,70 @@ services:
       - '6333:6333'
     volumes:
       - 'qdrant_storage:/qdrant/storage'
-    labels:
-      - coolify.managed=true
-      - coolify.applicationId=2
-      - coolify.type=application
-
 
   ollama-cpu:
-    profiles: ["cpu"]
-    <<: *service-ollama
+    profiles:
+      - cpu
+    image: 'ollama/ollama:latest'
+    container_name: ollama
+    networks:
+      - demo
+    restart: unless-stopped
+    ports:
+      - '11434:11434'
+    volumes:
+      - 'ollama_storage:/root/.ollama'
 
   ollama-gpu:
-    profiles: ["gpu-nvidia"]
-    <<: *service-ollama
+    profiles:
+      - gpu-nvidia
+    image: 'ollama/ollama:latest'
+    container_name: ollama
+    networks:
+      - demo
+    restart: unless-stopped
+    ports:
+      - '11434:11434'
+    volumes:
+      - 'ollama_storage:/root/.ollama'
     deploy:
       resources:
         reservations:
           devices:
-            - driver: nvidia
+            -
+              driver: nvidia
               count: 1
-              capabilities: [gpu]
+              capabilities:
+                - gpu
 
   ollama-pull-llama-cpu:
-    profiles: ["cpu"]
-    <<: *init-ollama
+    profiles:
+      - cpu
+    image: 'ollama/ollama:latest'
+    networks:
+      - demo
+    container_name: ollama-pull-llama
+    volumes:
+      - 'ollama_storage:/root/.ollama'
+    entrypoint: /bin/sh
+    command:
+      - '-c'
+      - 'sleep 3; OLLAMA_HOST=ollama:11434 ollama pull llama3.2'
     depends_on:
       - ollama-cpu
 
   ollama-pull-llama-gpu:
-    profiles: ["gpu-nvidia"]
-    <<: *init-ollama
+    profiles:
+      - gpu-nvidia
+    image: 'ollama/ollama:latest'
+    networks:
+      - demo
+    container_name: ollama-pull-llama
+    volumes:
+      - 'ollama_storage:/root/.ollama'
+    entrypoint: /bin/sh
+    command:
+      - '-c'
+      - 'sleep 3; OLLAMA_HOST=ollama:11434 ollama pull llama3.2'
     depends_on:
       - ollama-gpu
